@@ -28,6 +28,9 @@ export default function ChatPage() {
   const searchParams = useSearchParams();
   const documentId = searchParams.get('doc');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<string>(documentId || '');
+  const [documents, setDocuments] = useState<{ id: string; name: string }[]>([]);
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -46,23 +49,84 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Create session on mount
+  // Fetch ready documents
+  useEffect(() => {
+    fetch('/api/documents', { headers: { 'x-user-id': user?.id || '' } })
+      .then(r => r.json())
+      .then(data => {
+        if (data.data) {
+          const readyDocs = data.data.filter((d: { status: string }) => d.status === 'ready');
+          setDocuments(readyDocs);
+        }
+      })
+      .catch(() => {
+        // ignore fallback in chat
+      });
+  }, [user]);
+
+  // Create session and reload message history when selectedDoc changes
   useEffect(() => {
     const createSession = async () => {
       try {
         const res = await fetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user?.id || 'demo-user', documentId }),
+          body: JSON.stringify({ userId: user?.id || 'demo-user', documentId: selectedDoc || null }),
         });
         const data = await res.json();
-        if (data.data?.id) setSessionId(data.data.id);
+        if (data.data?.id) {
+          setSessionId(data.data.id);
+          
+          // Load existing session history
+          const historyRes = await fetch(`/api/chat?sessionId=${data.data.id}`);
+          const historyData = await historyRes.json();
+          
+          if (historyData.data && historyData.data.length > 0) {
+            const mappedMessages: Message[] = historyData.data.map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              citations: m.citations || [],
+              timestamp: new Date(m.created_at || Date.now())
+            }));
+            setMessages(mappedMessages);
+            const mappedHistory = historyData.data.map((m: any) => ({
+              role: m.role,
+              content: m.content
+            }));
+            setConversationHistory(mappedHistory);
+          } else {
+            const docName = documents.find(d => d.id === selectedDoc)?.name;
+            setMessages([
+              {
+                id: '0',
+                role: 'assistant',
+                content: selectedDoc
+                  ? `👋 Hello! I'm ready to help you study **"${docName || 'your document'}"**.\n\nAsk me questions about its concepts, formulas, or structure!`
+                  : "👋 Hello! I'm your **LearnSphere AI** assistant.\n\nI can help you:\n- 📖 **Explain concepts** from your uploaded documents\n- 📋 **Summarize chapters** and extract key points\n- 🎯 **Generate quiz questions** for practice\n- 🔍 **Find specific information** across your notes\n\nWhat would you like to learn today?",
+                citations: [],
+                timestamp: new Date(),
+              }
+            ]);
+            setConversationHistory([]);
+          }
+        }
       } catch {
         setSessionId(`local-${Date.now()}`);
+        setMessages([
+          {
+            id: '0',
+            role: 'assistant',
+            content: "👋 Hello! I'm your **LearnSphere AI** assistant.\n\nI can help you:\n- 📖 **Explain concepts** from your uploaded documents\n- 📋 **Summarize chapters** and extract key points\n- 🎯 **Generate quiz questions** for practice\n- 🔍 **Find specific information** across your notes\n\nWhat would you like to learn today?",
+            citations: [],
+            timestamp: new Date(),
+          }
+        ]);
+        setConversationHistory([]);
       }
     };
     createSession();
-  }, [documentId]);
+  }, [selectedDoc, user, documents]);
 
   const sendMessage = async (content?: string) => {
     const text = content || input.trim();
@@ -95,7 +159,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: text,
-          documentId,
+          documentId: selectedDoc || null,
           sessionId,
           userId: user?.id || 'demo-user',
           history: conversationHistory.slice(-6),
@@ -182,8 +246,31 @@ export default function ChatPage() {
             </span>
           </div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          {documentId && <span className="badge badge-brand">📎 Document linked</span>}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Active Document:</span>
+            <select
+              value={selectedDoc}
+              onChange={e => setSelectedDoc(e.target.value)}
+              className="input-base"
+              style={{
+                width: '240px',
+                padding: '6px 12px',
+                fontSize: '0.8rem',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--border)'
+              }}
+            >
+              <option value="" style={{ background: '#1a1a2e' }}>🌐 General Chat (No Document)</option>
+              {documents.map(d => (
+                <option key={d.id} value={d.id} style={{ background: '#1a1a2e' }}>
+                  📄 {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <span className="badge badge-success">RAG Enabled</span>
         </div>
       </div>

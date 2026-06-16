@@ -26,11 +26,33 @@ export async function POST(
       .eq('id', id);
 
     // Download file from Supabase Storage
-    const fileResponse = await fetch(fileUrl);
-    if (!fileResponse.ok) {
-      throw new Error(`Failed to fetch file: ${fileResponse.statusText}`);
+    let fileBuffer: Buffer;
+    const bucketMarker = '/storage/v1/object/public/documents/';
+    const markerIndex = fileUrl.indexOf(bucketMarker);
+
+    if (isSupabaseConfigured() && markerIndex !== -1) {
+      const storagePath = decodeURIComponent(fileUrl.substring(markerIndex + bucketMarker.length));
+      const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+        .from('documents')
+        .download(storagePath);
+
+      if (downloadError || !fileData) {
+        console.warn('Direct storage download failed, falling back to HTTP fetch:', downloadError);
+        const fileResponse = await fetch(fileUrl);
+        if (!fileResponse.ok) {
+          throw new Error(`Failed to fetch file: ${fileResponse.statusText}`);
+        }
+        fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+      } else {
+        fileBuffer = Buffer.from(await fileData.arrayBuffer());
+      }
+    } else {
+      const fileResponse = await fetch(fileUrl);
+      if (!fileResponse.ok) {
+        throw new Error(`Failed to fetch file: ${fileResponse.statusText}`);
+      }
+      fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
     }
-    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
 
     // Parse text based on file type
     let fullText = '';

@@ -105,6 +105,7 @@ Make questions progressively harder. Base ALL questions strictly on the provided
     const validQuestions = questions
       .filter((q: { question: string; type: string; correctAnswer: string }) => q.question && q.type && q.correctAnswer)
       .map((q: { type: string; question: string; options?: string[]; correctAnswer: string; explanation?: string }, i: number) => ({
+        id: `temp-${i}`,
         type: q.type,
         question: q.question,
         options: q.options || ['True', 'False'],
@@ -115,6 +116,7 @@ Make questions progressively harder. Base ALL questions strictly on the provided
 
     // Save quiz to database
     let quizId = `temp-${Date.now()}`;
+    let finalQuestions = validQuestions;
 
     if (isSupabaseConfigured()) {
       const { data: quiz, error: quizError } = await supabaseAdmin
@@ -133,23 +135,41 @@ Make questions progressively harder. Base ALL questions strictly on the provided
       if (!quizError && quiz) {
         quizId = quiz.id;
 
-        // Insert questions
-        await supabaseAdmin.from('quiz_questions').insert(
-          validQuestions.map((q: { type: string; question: string; options: string[]; correctAnswer: string; explanation: string; orderIndex: number }) => ({
-            quiz_id: quizId,
-            ...q,
-            correct_answer: q.correctAnswer,
-            order_index: q.orderIndex,
-          }))
-        );
+        // Insert questions and select them to retrieve IDs
+        const { data: insertedQuestions, error: questionsError } = await supabaseAdmin
+          .from('quiz_questions')
+          .insert(
+            validQuestions.map((q: any) => ({
+              quiz_id: quizId,
+              type: q.type,
+              question: q.question,
+              options: q.options,
+              correct_answer: q.correctAnswer,
+              explanation: q.explanation,
+              order_index: q.orderIndex,
+            }))
+          )
+          .select();
+
+        if (!questionsError && insertedQuestions && insertedQuestions.length > 0) {
+          finalQuestions = insertedQuestions.map((q: any) => ({
+            id: q.id,
+            type: q.type,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correct_answer,
+            explanation: q.explanation,
+            orderIndex: q.order_index,
+          })).sort((a: any, b: any) => a.orderIndex - b.orderIndex);
+        }
       }
     }
 
     return NextResponse.json({
       quizId,
       title: `${documentName.replace(/\.[^.]+$/, '')} — ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} Quiz`,
-      questions: validQuestions,
-      totalQuestions: validQuestions.length,
+      questions: finalQuestions,
+      totalQuestions: finalQuestions.length,
       difficulty,
     });
 
