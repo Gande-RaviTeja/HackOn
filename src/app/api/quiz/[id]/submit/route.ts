@@ -64,17 +64,20 @@ export async function POST(
     }
 
     // Update learning stats
-    await supabaseAdmin
-      .from('learning_stats')
-      .upsert({
-        user_id: userId,
-        date: new Date().toISOString().split('T')[0],
-        quizzes_taken: 1,
-      }, {
-        onConflict: 'user_id,date',
-        ignoreDuplicates: false,
-      })
-      .catch(console.error);
+    try {
+      await supabaseAdmin
+        .from('learning_stats')
+        .upsert({
+          user_id: userId,
+          date: new Date().toISOString().split('T')[0],
+          quizzes_taken: 1,
+        }, {
+          onConflict: 'user_id,date',
+          ignoreDuplicates: false,
+        });
+    } catch (err) {
+      console.error(err);
+    }
 
     return NextResponse.json({
       attemptId: attempt.id,

@@ -38,7 +38,8 @@ export async function POST(
 
     if (fileType === 'application/pdf' || fileUrl.endsWith('.pdf')) {
       try {
-        const pdfParse = (await import('pdf-parse')).default;
+        const pdfParseModule = await import('pdf-parse') as any;
+        const pdfParse = typeof pdfParseModule === 'function' ? pdfParseModule : (pdfParseModule.default || pdfParseModule);
         const pdfData = await pdfParse(fileBuffer);
         fullText = pdfData.text;
         pageCount = pdfData.numpages;

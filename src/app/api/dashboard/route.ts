@@ -120,13 +120,17 @@ async function generateRecommendations(userId: string): Promise<{ topic: string;
     .lt('score', 70)
     .limit(3);
 
-  return (attempts || []).map((a: { quiz_id: string; score: number; quizzes: { document_id: string; documents: { name: string } } | null }) => ({
-    topic: 'Review needed',
-    reason: `Low quiz score: ${a.score}%`,
-    documentName: a.quizzes?.documents?.name || 'Unknown',
-    documentId: a.quizzes?.document_id || '',
-    priority: a.score < 50 ? 'high' : 'medium',
-  }));
+  return (attempts || []).map((a: any) => {
+    const quiz = Array.isArray(a.quizzes) ? a.quizzes[0] : a.quizzes;
+    const document = quiz ? (Array.isArray(quiz.documents) ? quiz.documents[0] : quiz.documents) : null;
+    return {
+      topic: 'Review needed',
+      reason: `Low quiz score: ${a.score}%`,
+      documentName: document?.name || 'Unknown',
+      documentId: quiz?.document_id || '',
+      priority: a.score < 50 ? 'high' : 'medium',
+    };
+  });
 }
 
 function getDemoRecommendations() {
